@@ -17,41 +17,62 @@ def fetch_data(start_date, end_date):
     final_data = []
 
     for dt in dates:
+        st.write(f"Processing {dt}...")
+
         try:
-            st.write(f"Processing {dt}...")
+            # CASH DATA
+            cash = capital_market.bhav_copy_equities(dt)
+            df_cash = pd.DataFrame(cash)
 
-            # FULL CASH DATA
-            df_cash = pd.DataFrame(capital_market.bhav_copy_equities(dt))
-
-            # FULL F&O DATA
-            df_fo = pd.DataFrame(derivatives.fno_bhav_copy(dt))
-
-            if df_cash.empty or df_fo.empty:
+            if df_cash.empty:
+                st.warning(f"No cash data for {dt}")
                 continue
 
-            # -------- FUTURES ONLY -------- #
-            df_fut = df_fo[df_fo['FinInstrmTp'] == 'STF'].copy()
+            # FUTURES DATA
+            fo = derivatives.fno_bhav_copy(dt)
+            df_fo = pd.DataFrame(fo)
 
-            # -------- NEAR MONTH -------- #
+            if df_fo.empty:
+                st.warning(f"No futures data for {dt}")
+                continue
+
+            # -------- FIX 1: include FUTSTK -------- #
+            if 'FinInstrmTp' not in df_fo.columns:
+                st.warning(f"FinInstrmTp missing {dt}")
+                continue
+
+            df_fut = df_fo[df_fo['FinInstrmTp'].isin(['FUTSTK', 'STF'])].copy()
+
+            if df_fut.empty:
+                st.warning(f"No stock futures {dt}")
+                continue
+
+            # -------- FIX 2: expiry parsing -------- #
             df_fut['XpryDt'] = pd.to_datetime(df_fut['XpryDt'], errors='coerce')
 
-            # Sort by symbol + expiry
+            # -------- FIX 3: correct sorting -------- #
             df_fut = df_fut.sort_values(['TckrSymb', 'XpryDt'])
 
-            # Take nearest expiry per symbol
             df_near = df_fut.groupby('TckrSymb').first().reset_index()
 
-            df_near = df_near[['TckrSymb', 'OpnPric']]
+            df_near = df_near[['TckrSymb', 'OpnPric']].copy()
             df_near.columns = ['Symbol', 'Futures Price']
 
             # -------- CASH -------- #
-            df_cash = df_cash[['TckrSymb', 'OpnPric']]
+            df_cash = df_cash[['TckrSymb', 'OpnPric']].copy()
             df_cash.columns = ['Symbol', 'Cash Price']
 
             # -------- MERGE -------- #
             merged = pd.merge(df_near, df_cash, on='Symbol', how='inner')
 
-            # -------- CALCULATIONS -------- #
+            if merged.empty:
+                st.warning(f"No matching symbols {dt}")
+                continue
+
+            # -------- FIX 4: numeric safety -------- #
+            merged['Futures Price'] = pd.to_numeric(merged['Futures Price'], errors='coerce')
+            merged['Cash Price'] = pd.to_numeric(merged['Cash Price'], errors='coerce')
+
             merged['Difference'] = merged['Futures Price'] - merged['Cash Price']
             merged['Percentage (%)'] = (merged['Difference'] / merged['Cash Price']) * 100
 
@@ -59,15 +80,15 @@ def fetch_data(start_date, end_date):
 
             final_data.append(merged)
 
+            st.success(f"{dt} → {len(merged)} symbols")
+
         except Exception as e:
-            st.warning(f"Error on {dt}: {e}")
+            st.error(f"{dt} failed: {e}")
             continue
 
     if final_data:
         df = pd.concat(final_data, ignore_index=True)
-
         df = df[['Date', 'Symbol', 'Futures Price', 'Cash Price', 'Difference', 'Percentage (%)']]
-
         return df
 
     return pd.DataFrame()
