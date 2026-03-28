@@ -2,62 +2,83 @@ import streamlit as st
 import pandas as pd
 from datetime import timedelta
 from io import BytesIO
-from nselib import capital_market, derivatives
+
+st.set_page_config(page_title="NSE Downloader")
+
+st.title("📥 NSE Futures vs Cash Downloader")
+
+# SAFE IMPORT
+try:
+    from nselib import capital_market, derivatives
+    NSE_AVAILABLE = True
+    st.success("NSE library loaded ✅")
+except Exception as e:
+    NSE_AVAILABLE = False
+    st.error(f"NSE not working on cloud ❌: {e}")
 
 
 def fetch_data(start_date, end_date):
-    dates = [
-        (start_date + timedelta(days=i)).strftime("%d-%m-%Y")
-        for i in range((end_date - start_date).days + 1)
-    ]
+    if not NSE_AVAILABLE:
+        # fallback demo data
+        return pd.DataFrame({
+            "Date": [str(start_date)],
+            "Symbol": ["DEMO"],
+            "Futures Price": [100],
+            "Cash Price": [95],
+            "Difference": [5],
+            "Percentage (%)": [5.2]
+        })
 
-    final_data = []
+    try:
+        dates = [
+            (start_date + timedelta(days=i)).strftime("%d-%m-%Y")
+            for i in range((end_date - start_date).days + 1)
+        ]
 
-    for dt in dates:
-        try:
-            df_cash = pd.DataFrame(capital_market.bhav_copy_equities(dt))
-            df_fo = pd.DataFrame(derivatives.fno_bhav_copy(dt))
+        final_data = []
 
-            if df_cash.empty or df_fo.empty or 'FinInstrmTp' not in df_fo.columns:
+        for dt in dates:
+            try:
+                df_cash = pd.DataFrame(capital_market.bhav_copy_equities(dt))
+                df_fo = pd.DataFrame(derivatives.fno_bhav_copy(dt))
+
+                if df_cash.empty or df_fo.empty or 'FinInstrmTp' not in df_fo.columns:
+                    continue
+
+                df_fut = df_fo[df_fo['FinInstrmTp'] == 'STF'].copy()
+                if df_fut.empty:
+                    continue
+
+                df_fut['XpryDt'] = pd.to_datetime(df_fut['XpryDt'], errors='coerce')
+                df_fut = df_fut.sort_values('XpryDt')
+
+                df_near = df_fut.groupby('TckrSymb').first().reset_index()
+                df_near = df_near[['TckrSymb', 'OpnPric']]
+                df_near.columns = ['Symbol', 'Futures Price']
+
+                df_cash = df_cash[['TckrSymb', 'OpnPric']]
+                df_cash.columns = ['Symbol', 'Cash Price']
+
+                merged = pd.merge(df_near, df_cash, on='Symbol')
+                merged['Difference'] = merged['Futures Price'] - merged['Cash Price']
+                merged['Percentage (%)'] = (merged['Difference'] / merged['Cash Price']) * 100
+                merged['Date'] = dt
+
+                final_data.append(merged)
+
+            except Exception as e:
+                st.warning(f"Skipping {dt}: {e}")
                 continue
 
-            df_fut = df_fo[df_fo['FinInstrmTp'] == 'STF'].copy()
-            if df_fut.empty:
-                continue
+        if final_data:
+            df = pd.concat(final_data, ignore_index=True)
+            return df
 
-            df_fut['XpryDt'] = pd.to_datetime(df_fut['XpryDt'], errors='coerce')
-            df_fut = df_fut.sort_values('XpryDt')
+        return pd.DataFrame()
 
-            df_near = df_fut.groupby('TckrSymb').first().reset_index()
-            df_near = df_near[['TckrSymb', 'OpnPric']]
-            df_near.columns = ['Symbol', 'Futures Price']
-
-            df_cash = df_cash[['TckrSymb', 'OpnPric']]
-            df_cash.columns = ['Symbol', 'Cash Price']
-
-            merged = pd.merge(df_near, df_cash, on='Symbol')
-
-            merged['Difference'] = merged['Futures Price'] - merged['Cash Price']
-
-            # ✅ NEW: Percentage calculation
-            merged['Percentage (%)'] = (merged['Difference'] / merged['Cash Price']) * 100
-
-            merged['Date'] = dt
-
-            final_data.append(merged)
-
-        except:
-            continue
-
-    if final_data:
-        df = pd.concat(final_data, ignore_index=True)
-
-        # ✅ Column order
-        df = df[['Date', 'Symbol', 'Futures Price', 'Cash Price', 'Difference', 'Percentage (%)']]
-
-        return df
-
-    return pd.DataFrame()
+    except Exception as e:
+        st.error(f"Fetch error: {e}")
+        return pd.DataFrame()
 
 
 def to_excel(df):
@@ -67,15 +88,17 @@ def to_excel(df):
     return buffer.getvalue()
 
 
-# -------- UI -------- #
-
-st.title("📥 NSE Futures vs Cash Downloader")
-
+# UI
 start_date = st.date_input("Start Date")
 end_date = st.date_input("End Date")
 
+if start_date > end_date:
+    st.error("Start date must be before end date")
+    st.stop()
+
 if st.button("Generate File"):
-    df = fetch_data(start_date, end_date)
+    with st.spinner("Fetching data..."):
+        df = fetch_data(start_date, end_date)
 
     if df.empty:
         st.error("No data found")
@@ -87,6 +110,6 @@ if st.button("Generate File"):
         st.download_button(
             "⬇️ Download Excel",
             data=excel_data,
-            file_name=f"futures_{start_date}_{end_date}.xlsx",
+            file_name="futures_data.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
