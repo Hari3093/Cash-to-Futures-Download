@@ -5,7 +5,9 @@ from io import BytesIO
 
 from nselib import capital_market, derivatives
 
-st.title("📊 NSE F&O vs Cash (ALL SCRIPS)")
+st.set_page_config(page_title="NSE Cash to Futures Spread")
+
+st.title("📊 NSE Cash to Futures Spread (ALL SCRIPS)")
 
 # -------- FETCH FUNCTION -------- #
 def fetch_data(start_date, end_date):
@@ -16,41 +18,39 @@ def fetch_data(start_date, end_date):
 
     final_data = []
 
-    for dt in dates:
-        st.write(f"Processing {dt}...")
+    # ✅ Clean UI elements
+    status = st.empty()
+    progress = st.progress(0)
+    total = len(dates)
+
+    for i, dt in enumerate(dates):
+        status.info(f"Processing: {dt}")
+        progress.progress((i + 1) / total)
 
         try:
-            # CASH DATA
+            # -------- CASH DATA -------- #
             cash = capital_market.bhav_copy_equities(dt)
             df_cash = pd.DataFrame(cash)
 
             if df_cash.empty:
-                st.warning(f"No cash data for {dt}")
                 continue
 
-            # FUTURES DATA
+            # -------- FUTURES DATA -------- #
             fo = derivatives.fno_bhav_copy(dt)
             df_fo = pd.DataFrame(fo)
 
-            if df_fo.empty:
-                st.warning(f"No futures data for {dt}")
+            if df_fo.empty or 'FinInstrmTp' not in df_fo.columns:
                 continue
 
-            # -------- FIX 1: include FUTSTK -------- #
-            if 'FinInstrmTp' not in df_fo.columns:
-                st.warning(f"FinInstrmTp missing {dt}")
-                continue
-
+            # ✅ IMPORTANT FIX (ALL FUTURES)
             df_fut = df_fo[df_fo['FinInstrmTp'].isin(['FUTSTK', 'STF'])].copy()
 
             if df_fut.empty:
-                st.warning(f"No stock futures {dt}")
                 continue
 
-            # -------- FIX 2: expiry parsing -------- #
+            # -------- NEAR MONTH -------- #
             df_fut['XpryDt'] = pd.to_datetime(df_fut['XpryDt'], errors='coerce')
 
-            # -------- FIX 3: correct sorting -------- #
             df_fut = df_fut.sort_values(['TckrSymb', 'XpryDt'])
 
             df_near = df_fut.groupby('TckrSymb').first().reset_index()
@@ -66,10 +66,9 @@ def fetch_data(start_date, end_date):
             merged = pd.merge(df_near, df_cash, on='Symbol', how='inner')
 
             if merged.empty:
-                st.warning(f"No matching symbols {dt}")
                 continue
 
-            # -------- FIX 4: numeric safety -------- #
+            # -------- CALCULATIONS -------- #
             merged['Futures Price'] = pd.to_numeric(merged['Futures Price'], errors='coerce')
             merged['Cash Price'] = pd.to_numeric(merged['Cash Price'], errors='coerce')
 
@@ -80,11 +79,11 @@ def fetch_data(start_date, end_date):
 
             final_data.append(merged)
 
-            st.success(f"{dt} → {len(merged)} symbols")
-
         except Exception as e:
             st.error(f"{dt} failed: {e}")
             continue
+
+    status.success("✅ Completed all dates")
 
     if final_data:
         df = pd.concat(final_data, ignore_index=True)
@@ -111,7 +110,7 @@ if start_date > end_date:
     st.stop()
 
 if st.button("Generate File"):
-    with st.spinner("Fetching ALL F&O data..."):
+    with st.spinner("Fetching Cash to Futures Spread data..."):
         df = fetch_data(start_date, end_date)
 
     if df.empty:
@@ -126,6 +125,6 @@ if st.button("Generate File"):
         st.download_button(
             "⬇️ Download Excel",
             data=excel_data,
-            file_name=f"nse_fo_full_{start_date}_{end_date}.xlsx",
+            file_name=f"nse_cash_to_futures_{start_date}_{end_date}.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
