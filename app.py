@@ -1,50 +1,39 @@
 import streamlit as st
 import pandas as pd
-from datetime import timedelta
 from io import BytesIO
 
-st.set_page_config(page_title="NSE Downloader")
+st.set_page_config(page_title="Futures vs Cash Analyzer")
 
-st.title("📥 Futures vs Cash Downloader (Stable Version)")
+st.title("📊 Futures vs Cash Arbitrage Analyzer")
 
-start_date = st.date_input("Start Date")
-end_date = st.date_input("End Date")
+# -------- FILE UPLOAD -------- #
+uploaded_file = st.file_uploader(
+    "Upload your NSE Excel file",
+    type=["xlsx"]
+)
 
-if start_date > end_date:
-    st.error("Start date must be before end date")
-    st.stop()
+# -------- PROCESS FUNCTION -------- #
+def process_data(df):
+    # Normalize column names
+    df.columns = [col.strip() for col in df.columns]
 
+    required_cols = ["Symbol", "Futures Price", "Cash Price"]
 
-def fetch_data(start_date, end_date):
-    dates = [
-        (start_date + timedelta(days=i)).strftime("%d-%m-%Y")
-        for i in range((end_date - start_date).days + 1)
-    ]
+    for col in required_cols:
+        if col not in df.columns:
+            st.error(f"Missing column: {col}")
+            st.stop()
 
-    data = []
+    # Calculate metrics
+    df["Difference"] = df["Futures Price"] - df["Cash Price"]
+    df["Percentage (%)"] = (df["Difference"] / df["Cash Price"]) * 100
 
-    symbols = ["RELIANCE", "TCS", "INFY", "HDFCBANK"]
+    df["Percentage (%)"] = df["Percentage (%)"].round(2)
 
-    for dt in dates:
-        for sym in symbols:
-            cash = 1000 + hash(sym) % 500
-            fut = cash + (hash(dt + sym) % 50)
-
-            diff = fut - cash
-            pct = (diff / cash) * 100
-
-            data.append({
-                "Date": dt,
-                "Symbol": sym,
-                "Futures Price": fut,
-                "Cash Price": cash,
-                "Difference": diff,
-                "Percentage (%)": round(pct, 2)
-            })
-
-    return pd.DataFrame(data)
+    return df
 
 
+# -------- EXPORT FUNCTION -------- #
 def to_excel(df):
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
@@ -52,22 +41,29 @@ def to_excel(df):
     return buffer.getvalue()
 
 
-if st.button("Generate File"):
-    with st.spinner("Generating data..."):
-        df = fetch_data(start_date, end_date)
+# -------- MAIN LOGIC -------- #
+if uploaded_file:
+    try:
+        df = pd.read_excel(uploaded_file)
 
-    if df.empty:
-        st.error("No data found")
-    else:
-        st.success("File ready!")
+        st.success("File uploaded successfully ✅")
 
+        st.subheader("📄 Raw Data Preview")
         st.dataframe(df.head())
 
-        excel_data = to_excel(df)
+        df_processed = process_data(df)
+
+        st.subheader("📊 Processed Data Preview")
+        st.dataframe(df_processed.head())
+
+        excel_data = to_excel(df_processed)
 
         st.download_button(
-            "⬇️ Download Excel",
+            label="⬇️ Download Processed Excel",
             data=excel_data,
-            file_name=f"futures_{start_date}_{end_date}.xlsx",
+            file_name="futures_processed.xlsx",
             mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
         )
+
+    except Exception as e:
+        st.error(f"Error processing file: {e}")
