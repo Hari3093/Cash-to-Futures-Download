@@ -5,9 +5,9 @@ from io import BytesIO
 
 from nselib import capital_market, derivatives
 
-st.set_page_config(page_title="NSE Cash to Futures Spread")
+st.set_page_config(page_title="NSE Cash to Futures Spread (All Scrips)")
 
-st.title("📊 NSE Cash to Futures Spread")
+st.title("📊 NSE Cash to Futures Spread (All Scrips)")
 
 # -------- FETCH FUNCTION -------- #
 def fetch_data(start_date, end_date):
