@@ -94,6 +94,10 @@ def fetch_data(start_date, end_date):
     if final_data:
         df = pd.concat(final_data, ignore_index=True)
         df = df[['Date', 'Symbol', 'Futures Price', 'Cash Price', 'Difference', 'Percentage (%)']]
+        
+        # Format percentage column with % sign and 2 decimal places
+        df['Percentage (%)'] = df['Percentage (%)'].apply(lambda x: f"{x:.2f}%")
+        
         return df
 
     return pd.DataFrame()
