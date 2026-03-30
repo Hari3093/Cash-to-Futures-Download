@@ -1,6 +1,6 @@
 import streamlit as st
 import pandas as pd
-from datetime import timedelta
+from datetime import timedelta, datetime
 from io import BytesIO
 
 from nselib import capital_market, derivatives
@@ -8,6 +8,11 @@ from nselib import capital_market, derivatives
 st.set_page_config(page_title="NSE Cash to Futures Spread (All Scrips)")
 
 st.title("📊 NSE Cash to Futures Spread (All Scrips)")
+
+# -------- HELPER FUNCTION -------- #
+def is_trading_date(date):
+    """Check if date is a weekday (NSE trading day)"""
+    return date.weekday() < 5  # Monday=0, Friday=4
 
 # -------- FETCH FUNCTION -------- #
 def fetch_data(start_date, end_date):
@@ -80,7 +85,8 @@ def fetch_data(start_date, end_date):
             final_data.append(merged)
 
         except Exception as e:
-            st.error(f"{dt} failed: {e}")
+            status.error(f"{dt} failed: {str(e)}")
+            st.write(f"Error on {dt}: {e}")
             continue
 
     status.success("✅ Completed all dates")
@@ -97,7 +103,8 @@ def fetch_data(start_date, end_date):
 def to_excel(df):
     buffer = BytesIO()
     with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-        df.to_excel(writer, index=False)
+        df.to_excel(writer, index=False, sheet_name='Data')
+    buffer.seek(0)
     return buffer.getvalue()
 
 
@@ -105,8 +112,26 @@ def to_excel(df):
 start_date = st.date_input("Start Date")
 end_date = st.date_input("End Date")
 
+# Validation checks
 if start_date > end_date:
-    st.error("Start date must be before end date")
+    st.error("❌ Start date must be before end date")
+    st.stop()
+
+if not is_trading_date(start_date):
+    st.warning(f"⚠️ Start date ({start_date}) is not a weekday. NSE is closed on weekends/holidays.")
+
+if not is_trading_date(end_date):
+    st.warning(f"⚠️ End date ({end_date}) is not a weekday. NSE is closed on weekends/holidays.")
+
+# Filter to only weekdays
+dates = []
+for i in range((end_date - start_date).days + 1):
+    date = start_date + timedelta(days=i)
+    if is_trading_date(date):
+        dates.append(date)
+
+if not dates:
+    st.error("❌ No trading dates found in the selected range!")
     st.stop()
 
 if st.button("Generate File"):
@@ -114,11 +139,14 @@ if st.button("Generate File"):
         df = fetch_data(start_date, end_date)
 
     if df.empty:
-        st.error("No data found")
+        st.error("❌ No data found. Please try:")
+        st.write("• Select dates when NSE is open (Mon-Fri)")
+        st.write("• Avoid holidays and market closure dates")
+        st.write("• Use recent dates (within last 1-2 months)")
     else:
-        st.success(f"Total Rows: {len(df)}")
+        st.success(f"✅ Total Rows: {len(df)}")
 
-        st.dataframe(df.head())
+        st.dataframe(df.head(10))
 
         excel_data = to_excel(df)
 
