@@ -95,8 +95,8 @@ def fetch_data(start_date, end_date):
         df = pd.concat(final_data, ignore_index=True)
         df = df[['Date', 'Symbol', 'Futures Price', 'Cash Price', 'Difference', 'Percentage (%)']]
         
-        # Format percentage column with % sign and 2 decimal places
-        df['Percentage (%)'] = df['Percentage (%)'].apply(lambda x: f"{x:.2f}%")
+        # Round percentage to 2 decimal places
+        df['Percentage (%)'] = df['Percentage (%)'].round(2)
         
         return df
 
@@ -150,7 +150,11 @@ if st.button("Generate File"):
     else:
         st.success(f"✅ Total Rows: {len(df)}")
 
-        st.dataframe(df.head(10))
+        # Format display with % sign
+        df_display = df.copy()
+        df_display['Percentage (%)'] = df_display['Percentage (%)'].apply(lambda x: f"{x:.2f}%")
+        
+        st.dataframe(df_display.head(10))
 
         excel_data = to_excel(df)
 
