@@ -61,11 +61,11 @@ def fetch_data(start_date, end_date):
 
             df_near = df_fut.groupby('TckrSymb').first().reset_index()
 
-            df_near = df_near[['TckrSymb', 'OpnPric']].copy()
+            df_near = df_near[['TckrSymb', 'ClsPric']].copy()
             df_near.columns = ['Symbol', 'Futures Price']
 
             # -------- CASH -------- #
-            df_cash = df_cash[['TckrSymb', 'OpnPric']].copy()
+            df_cash = df_cash[['TckrSymb', 'ClsPric']].copy()
             df_cash.columns = ['Symbol', 'Cash Price']
 
             # -------- MERGE -------- #
@@ -139,11 +139,11 @@ def fetch_today_320pm_data():
         df_fut = df_fut.sort_values(['TckrSymb', 'XpryDt'])
         df_near = df_fut.groupby('TckrSymb').first().reset_index()
         
-        df_near = df_near[['TckrSymb', 'OpnPric']].copy()
+        df_near = df_near[['TckrSymb', 'ClsPric']].copy()
         df_near.columns = ['Symbol', 'Futures Price']
         
         # -------- CASH -------- #
-        df_cash = df_cash[['TckrSymb', 'OpnPric']].copy()
+        df_cash = df_cash[['TckrSymb', 'ClsPric']].copy()
         df_cash.columns = ['Symbol', 'Cash Price']
         
         # -------- MERGE -------- #
